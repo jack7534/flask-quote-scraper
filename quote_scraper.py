@@ -3,7 +3,7 @@ from bs4 import BeautifulSoup
 import json
 import re
 import math
-import time  # ✅ 加入 time.sleep 來防止過快請求被封鎖
+import time
 
 # 設定 User-Agent 避免被擋
 HEADERS = {
@@ -12,26 +12,29 @@ HEADERS = {
 
 def clean_price(price_text):
     """ 清理價格字串，確保能轉換為 int """
-    price_text = price_text.replace("円", "").replace(",", "").replace("(税込)", "").replace("(税 0)", "").strip()
-    return int(re.sub(r"[^\d]", "", price_text))  # 只保留數字部分，移除日文字
+    price_text = re.sub(r"[^\d]", "", price_text.replace("円", "").replace(",", "").strip())
+    return int(price_text) if price_text else None
 
 def scrape_amazon_japan(url):
     """ 爬取 Amazon Japan 商品資訊 """
     try:
-        time.sleep(2)  # ✅ 防止請求過快
         response = requests.get(url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(response.text, "lxml")
 
         title = soup.select_one("#productTitle")
         price = soup.select_one(".a-price .a-offscreen")
+        image = soup.select_one("#landingImage")
 
-        if title and price:
-            price_jpy = clean_price(price.text)
+        price_jpy = clean_price(price.text) if price else None
+        image_url = image["src"] if image else ""
+
+        if title and price_jpy:
             return {
                 "網站": "Amazon Japan",
                 "名稱": title.text.strip(),
                 "日幣價格": price_jpy,
                 "台幣報價": math.ceil(price_jpy * 0.35),
+                "圖片": image_url,
                 "連結": url
             }
         return {"錯誤": "無法獲取 Amazon 商品價格"}
@@ -41,7 +44,6 @@ def scrape_amazon_japan(url):
 def scrape_rakuten(url):
     """ 爬取 Rakuten 樂天市場 商品資訊 """
     try:
-        time.sleep(2)  # ✅ 防止請求過快
         response = requests.get(url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(response.text, "lxml")
 
@@ -53,25 +55,23 @@ def scrape_rakuten(url):
         else:
             title_text = "無法獲取商品名稱"
 
-        # 嘗試不同的方法獲取價格
         price_jpy = None
-        price_elements = [
-            soup.select_one("meta[itemprop='price']"),
-            soup.select_one("#priceCalculationConfig"),
-            soup.select_one("input#ratPrice"),
-            soup.select_one(".price")  # ✅ 新增選擇器
-        ]
 
-        for element in price_elements:
-            if element and element.has_attr("content"):
-                price_jpy = clean_price(element["content"])
-                break
-            elif element and element.has_attr("data-price"):
-                price_jpy = clean_price(element["data-price"])
-                break
-            elif element:
-                price_jpy = clean_price(element.text)
-                break
+        # 嘗試從不同位置獲取價格
+        meta_price = soup.select_one("meta[itemprop='price']")
+        if meta_price and "content" in meta_price.attrs:
+            price_jpy = clean_price(meta_price["content"])
+
+        config_price = soup.select_one("#priceCalculationConfig")
+        if not price_jpy and config_price and "data-price" in config_price.attrs:
+            price_jpy = clean_price(config_price["data-price"])
+
+        input_price = soup.select_one("input#ratPrice")
+        if not price_jpy and input_price and "value" in input_price.attrs:
+            price_jpy = clean_price(input_price["value"])
+
+        image = soup.select_one("meta[property='og:image']")
+        image_url = image["content"] if image else ""
 
         if price_jpy:
             return {
@@ -79,23 +79,21 @@ def scrape_rakuten(url):
                 "名稱": title_text,
                 "日幣價格": price_jpy,
                 "台幣報價": math.ceil(price_jpy * 0.35),
+                "圖片": image_url,
                 "連結": url
             }
         else:
             return {"錯誤": "無法獲取 Rakuten 商品價格"}
-
     except Exception as e:
         return {"錯誤": f"Rakuten 爬取失敗: {str(e)}"}
 
 def scrape_yahoo_auction(url):
     """ 爬取 Yahoo Auctions 商品資訊 """
     try:
-        time.sleep(2)  # ✅ 防止請求過快
         response = requests.get(url, headers=HEADERS, timeout=10)
         soup = BeautifulSoup(response.text, "lxml")
 
         title = soup.select_one(".Product__title") or soup.select_one(".ProductTitle__text")
-
         bid_price = soup.select_one(".Price__value")
         buy_price = soup.select_one(".Price__now") or soup.select_one(".ProductPrice__value")
         auction_time = soup.select_one(".Auction__endTime")
@@ -110,19 +108,22 @@ def scrape_yahoo_auction(url):
 
         if price_text:
             price_text = re.sub(r"税\s*\d*\s*円", "", price_text)
-            price_jpy = int(re.sub(r"[^\d]", "", price_text))
+            price_jpy = clean_price(price_text)
 
-        if price_jpy:
+        image = soup.select_one("meta[property='og:image']")
+        image_url = image["content"] if image else ""
+
+        if title and price_jpy:
             return {
                 "網站": "Yahoo Auctions",
-                "名稱": title.text.strip() if title else "無法獲取商品名稱",
+                "名稱": title.text.strip(),
                 "日幣價格": price_jpy,
                 "台幣報價": math.ceil(price_jpy * 0.35),
                 "競標結束時間": auction_time.text.strip() if auction_time else "無法取得",
+                "圖片": image_url,
                 "連結": url
             }
         return {"錯誤": "無法獲取 Yahoo Auctions 價格"}
-
     except Exception as e:
         return {"錯誤": f"Yahoo Auctions 爬取失敗: {str(e)}"}
 
@@ -158,4 +159,5 @@ if __name__ == "__main__":
         print(f"💰 台幣報價：NT$ {result['台幣報價']}")
         if "競標結束時間" in result:
             print(f"⏳ 競標結束時間：{result['競標結束時間']}")
-        print(f"🔗 商品連結：{result['連結']}\n")
+        print(f"🔗 商品連結：{result['連結']}")
+        print(f"🖼 商品圖片：{result['圖片']}\n")
