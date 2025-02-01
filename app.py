@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from quote_scraper import get_quotation  # ✅ 保持爬蟲功能
 import os
 import matsukiyo_ocr
 import biccamera_ocr
@@ -19,25 +18,11 @@ os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 def home():
     return "Hello, Flask!"
 
-# **🔹 爬蟲 API (/scrape)**
-@app.route("/scrape", methods=["POST"])
-def scrape():
-    data = request.json
-    url = data.get("url", "").strip()
-
-    if not url:
-        return jsonify({"status": "error", "message": "請提供商品網址"}), 400
-
-    result = get_quotation(url)
-    if "錯誤" in result:
-        return jsonify({"status": "error", "message": result["錯誤"]}), 400
-
-    return jsonify({"status": "done", "data": result})
-
-# **🔹 圖片上傳 API (/upload)**
+# **🔹 檢查允許的檔案格式**
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
+# **🔹 圖片上傳並自動選擇 OCR 處理方式**
 @app.route("/upload", methods=["POST"])
 def upload_file():
     if 'file' not in request.files:
@@ -52,15 +37,22 @@ def upload_file():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         file.save(filepath)
 
-        # **🔸 根據文件名稱判斷 OCR 類型**
-        if "matsukiyo" in filename.lower():
-            result = matsukiyo_ocr.process_image(filepath)
-        elif "biccamera" in filename.lower():
+        try:
+            # **🔹 先用 BicCamera OCR 解析**
             result = biccamera_ocr.process_image(filepath)
-        else:
-            result = {"status": "error", "message": "無法識別的網站"}
 
-        return jsonify(result)
+            # **如果 BicCamera 失敗，換 Matsukiyo OCR 嘗試**
+            if result.get("status") == "error":
+                result = matsukiyo_ocr.process_image(filepath)
+
+            # **如果都失敗，回傳錯誤**
+            if result.get("status") == "error":
+                return jsonify({"status": "error", "message": "OCR 解析失敗，可能是無法識別的網站"}), 400
+
+            return jsonify(result)
+
+        except Exception as e:
+            return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
 
     return jsonify({"status": "error", "message": "不支援的檔案格式"}), 400
 
