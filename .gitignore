@@ -13,3 +13,5 @@ venv/
 
 # 忽略 Git metadata
 .git/
+mypython-*.json
+*.json
