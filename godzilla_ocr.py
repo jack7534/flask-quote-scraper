@@ -6,8 +6,8 @@ import biccamera_ocr
 import godzilla_ocr  # ✅ 加入 Godzilla OCR
 from werkzeug.utils import secure_filename
 
-# ✅ 設定 Google Cloud API 金鑰
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/secrets/gcloud-key.json"
+# 設定 Google Cloud API JSON 憑證
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/Jack/PycharmProjects/PythonProject/mypython-449619-947c8f434081.json"
 
 # ✅ 建立 Flask App
 app = Flask(__name__)
