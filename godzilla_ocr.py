@@ -5,7 +5,11 @@ import math
 from google.cloud import vision
 
 # ✅ 設定 Google Cloud API JSON 憑證
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/secrets/gcloud-key.json"
+# **自動判斷環境**
+if os.getenv("RENDER") == "true":
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/secrets/gcloud-key.json"  # ✅ Render 雲端環境
+else:
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/Jack/PycharmProjects/PythonProject/mypython-449619-947c8f434081.json"  # ✅ 本地端測試
 
 def process_image(image_path):
     """ 使用 Google Cloud Vision API 進行 OCR """
