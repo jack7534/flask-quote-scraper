@@ -1,82 +1,86 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS
 import os
-import matsukiyo_ocr
-import biccamera_ocr
-import godzilla_ocr  # ✅ 重新加入 Godzilla OCR
-from werkzeug.utils import secure_filename
+from google.cloud import vision
+import io
+import re
+import math
 
-# ✅ 設定 Google Cloud API 金鑰
-if os.getenv("RENDER") == "true":
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/secrets/gcloud-key.json"
-else:
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/Jack/PycharmProjects/PythonProject/mypython-449619-947c8f434081.json"
+# 設定 Google Cloud API JSON 憑證
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/Jack/PycharmProjects/PythonProject/mypython-449619-947c8f434081.json"
 
-# ✅ 建立 Flask App
-app = Flask(__name__)
-CORS(app)  # 確保 CORS 啟用
+def process_image(image_path):
+    """ 使用 Google Cloud Vision API 進行 OCR """
+    client = vision.ImageAnnotatorClient()
 
-# ✅ Render 無法寫入根目錄，使用 /tmp 作為可寫入目錄
-UPLOAD_FOLDER = "/tmp/uploads"
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg'}
+    with io.open(image_path, "rb") as image_file:
+        content = image_file.read()
 
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # 確保目錄存在
+    image = vision.Image(content=content)
+    response = client.text_detection(image=image)
+    texts = response.text_annotations
 
-# **🔹 測試 Flask 是否運行成功**
-@app.route("/")
-def home():
-    return "Hello, Flask!"
+    if not texts:
+        return {"status": "error", "message": "OCR 無法識別文字"}
 
-# **🔹 檢查允許的檔案格式**
-def allowed_file(filename):
-    return '.' in filename and filename.rsplit('.', 1)[-1].lower() in ALLOWED_EXTENSIONS
+    raw_text = texts[0].description  # 取得 OCR 解析的文字
 
-# **🔹 圖片上傳並自動選擇 OCR 處理方式**
-@app.route("/upload", methods=["POST"])
-def upload_file():
-    if "file" not in request.files:
-        return jsonify({"status": "error", "message": "沒有檔案"}), 400
+    print("\n🔍 OCR 解析結果：")
+    print(raw_text)
 
-    file = request.files["file"]
-    if file.filename == "":
-        return jsonify({"status": "error", "message": "沒有選擇檔案"}), 400
+    print("Google Cloud Vision API 回傳的完整結果：", response)  # ✅ 確保 API 回傳內容
 
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-        file.save(filepath)  # ✅ 確保檔案被儲存
+    # **判斷是否來自 Godzilla Store**
+    if "godzilla.store" in raw_text.lower() or "ゴジラ・ストア" in raw_text:
+        return extract_godzilla_data(raw_text)
+    else:
+        return {"status": "error", "message": "這不是 Godzilla Store 網站的資料"}
 
-        try:
-            print(f"📂 正在處理檔案: {filepath}")  # Debug 記錄
+def extract_godzilla_data(text):
+    """ 從 Godzilla Store OCR 結果中提取商品名稱與價格 """
+    lines = text.split("\n")
 
-            # **🔹 先嘗試 Godzilla OCR**
-            result = godzilla_ocr.process_image(filepath)
+    # **提取商品名稱**
+    product_name = extract_product_name(lines)
 
-            # **如果 Godzilla OCR 失敗，再嘗試 BicCamera**
-            if result.get("status") == "error":
-                print("⚠️ Godzilla OCR 失敗，改用 BicCamera OCR")
-                result = biccamera_ocr.process_image(filepath)
+    # **提取價格**
+    price_jpy = extract_price(text)  # ✅ 更新為新的 `extract_price()`
 
-            # **如果 BicCamera OCR 也失敗，改用 Matsukiyo**
-            if result.get("status") == "error":
-                print("⚠️ BicCamera OCR 失敗，改用 Matsukiyo OCR")
-                result = matsukiyo_ocr.process_image(filepath)
+    # **計算台幣報價**
+    price_twd = math.ceil(price_jpy * 0.35) if price_jpy > 0 else "N/A"
 
-            # **如果所有 OCR 都失敗，回傳錯誤**
-            if result.get("status") == "error":
-                return jsonify({"status": "error", "message": "OCR 解析失敗，可能是無法識別的網站"}), 400
+    return {
+        "status": "done",
+        "商品名稱": product_name,
+        "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy > 0 else "N/A",
+        "台幣報價": f"{price_twd} 元" if price_jpy > 0 else "N/A"
+    }
 
-            print("✅ OCR 解析成功")
-            return jsonify(result)
+def extract_product_name(lines):
+    """ 從 OCR 結果中提取商品名稱 """
+    product_name = "未找到商品名稱"
 
-        except Exception as e:
-            print(f"❌ 伺服器錯誤: {str(e)}")
-            return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
+    for i, line in enumerate(lines):
+        if "円" in line and i > 0:
+            # 商品名稱通常在價格的上方
+            product_name = lines[i - 1].strip()
+            break
 
-    return jsonify({"status": "error", "message": "不支援的檔案格式"}), 400
+    if product_name == "未找到商品名稱":
+        for line in lines:
+            if "ゴジラ・ストア" in line:
+                index = lines.index(line)
+                if index + 1 < len(lines):
+                    product_name = lines[index + 1].strip()
+                break
 
-# **🔹 啟動 Flask 服務**
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))  # 預設使用 Render 給的 PORT
-    app.run(host="0.0.0.0", port=port, debug=True)
+    return product_name
+
+def extract_price(text):
+    """ 從 OCR 文字中提取價格 """
+    price_jpy = 0
+
+    # **匹配 "￥" 之後的數字，確保不含千分位逗號**
+    price_match = re.search(r"￥\s*([\d,]+)", text)
+    if price_match:
+        price_jpy = int(price_match.group(1).replace(",", ""))  # ✅ 去除千分位逗號
+
+    return price_jpy
