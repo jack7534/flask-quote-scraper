@@ -3,10 +3,14 @@ from flask_cors import CORS
 import os
 import matsukiyo_ocr
 import biccamera_ocr
+import godzilla_ocr  # ✅ 重新加入 Godzilla OCR
 from werkzeug.utils import secure_filename
 
 # ✅ 設定 Google Cloud API 金鑰
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/secrets/gcloud-key.json"
+if os.getenv("RENDER") == "true":
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "/etc/secrets/gcloud-key.json"
+else:
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "C:/Users/Jack/PycharmProjects/PythonProject/mypython-449619-947c8f434081.json"
 
 # ✅ 建立 Flask App
 app = Flask(__name__)
@@ -46,15 +50,20 @@ def upload_file():
         try:
             print(f"📂 正在處理檔案: {filepath}")  # Debug 記錄
 
-            # **🔹 先用 BicCamera OCR 解析**
-            result = biccamera_ocr.process_image(filepath)
+            # **🔹 先嘗試 Godzilla OCR**
+            result = godzilla_ocr.process_image(filepath)
 
-            # **如果 BicCamera 失敗，換 Matsukiyo OCR 嘗試**
+            # **如果 Godzilla OCR 失敗，再嘗試 BicCamera**
+            if result.get("status") == "error":
+                print("⚠️ Godzilla OCR 失敗，改用 BicCamera OCR")
+                result = biccamera_ocr.process_image(filepath)
+
+            # **如果 BicCamera OCR 也失敗，改用 Matsukiyo**
             if result.get("status") == "error":
                 print("⚠️ BicCamera OCR 失敗，改用 Matsukiyo OCR")
                 result = matsukiyo_ocr.process_image(filepath)
 
-            # **如果都失敗，回傳錯誤**
+            # **如果所有 OCR 都失敗，回傳錯誤**
             if result.get("status") == "error":
                 return jsonify({"status": "error", "message": "OCR 解析失敗，可能是無法識別的網站"}), 400
 
