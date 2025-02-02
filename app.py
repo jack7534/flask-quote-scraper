@@ -17,8 +17,9 @@ app = Flask(__name__)
 CORS(app)
 
 # **設定 Google Cloud API JSON 憑證**
-cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")  # 環境變數應該存放 JSON 字符串
-cred_path = "/opt/render/project/.creds/google_api.json"  # 指定安全存放位置
+google_api_key = os.getenv("GOOGLE_API_KEY")
+cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")  # 應該是 JSON 字符串
+cred_path = "/opt/render/project/.creds/google_api.json"  # 指定存放位置
 
 if cred_json:
     os.makedirs(os.path.dirname(cred_path), exist_ok=True)
@@ -26,13 +27,12 @@ if cred_json:
         f.write(cred_json)
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
 else:
-    raise ValueError("❌ Google API Key 未設置，請確認環境變數")
+    raise ValueError("❌ 找不到 Google Cloud 憑證，請確認 `GOOGLE_APPLICATION_CREDENTIALS_JSON` 環境變數")
 
 # **讀取 OpenAI API Key**
 openai.api_key = os.getenv("OPENAI_API_KEY")
 if not openai.api_key:
-    raise ValueError("❌ OpenAI API Key 未設置，請確認環境變數")
-
+    raise ValueError("❌ OpenAI API Key 未設置，請確認環境變數 `OPENAI_API_KEY`")
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
@@ -49,7 +49,6 @@ def upload_file():
         return jsonify(result)
     except Exception as e:
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
-
 
 def process_image(image_file):
     """使用 Google Cloud Vision API 進行 OCR"""
@@ -72,7 +71,6 @@ def process_image(image_file):
     extracted_data = extract_with_openai(raw_text)
 
     return extracted_data
-
 
 def extract_with_openai(text):
     """使用 OpenAI 來解析 OCR 結果並提取關鍵資訊"""
@@ -118,7 +116,7 @@ def extract_with_openai(text):
     except Exception as e:
         return {"status": "error", "message": f"OpenAI 解析失敗: {str(e)}"}
 
-
 # **Render 需要這行來啟動 Flask**
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    port = int(os.getenv("PORT", 10000))  # 預設為 10000，Render 會提供 PORT
+    app.run(host="0.0.0.0", port=port)
