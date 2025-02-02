@@ -58,4 +58,6 @@ def upload_file():
 
 # **🔹 啟動 Flask 服務**
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000, debug=True)
+    port = int(os.environ.get("PORT", 5000))  # 預設使用 Render 給的 PORT
+    app.run(host="0.0.0.0", port=port, debug=True)
+
