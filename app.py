@@ -17,11 +17,16 @@ app = Flask(__name__)
 CORS(app)
 
 # **設定 Google Cloud API JSON 憑證**
-cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "mypython-449619-ac9b2e9bd9c2.json")
-if not os.path.exists(cred_path):
-    raise FileNotFoundError(f"找不到 Google API 憑證: {cred_path}")
+cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")  # 環境變數應該存放 JSON 字符串
+cred_path = "/opt/render/project/.creds/google_api.json"  # 指定安全存放位置
 
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+if cred_json:
+    os.makedirs(os.path.dirname(cred_path), exist_ok=True)
+    with open(cred_path, "w") as f:
+        f.write(cred_json)
+    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+else:
+    raise ValueError("❌ Google API Key 未設置，請確認環境變數")
 
 # **讀取 OpenAI API Key**
 openai.api_key = os.getenv("OPENAI_API_KEY")
