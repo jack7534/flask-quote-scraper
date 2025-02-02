@@ -3,11 +3,12 @@ import io
 import json
 import math
 import sys
+import time  # ✅ 增加等待機制
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.cloud import vision
 from dotenv import load_dotenv
-from openai import OpenAI  # ✅ 確保使用新版 API
+import openai  # ✅ 確保 OpenAI 正確使用
 
 # **載入環境變數**
 load_dotenv()
@@ -16,35 +17,11 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# **讀取 Google Cloud API JSON 憑證**
-cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")  # 讀取 JSON 內容
-cred_path = "/opt/render/project/.creds/google_api.json"  # 指定存放路徑
-
-if not cred_json:
-    print("❌ GOOGLE_APPLICATION_CREDENTIALS 環境變數未設置", file=sys.stderr)
-    raise ValueError("❌ 找不到 Google Cloud 憑證，請確認 GOOGLE_APPLICATION_CREDENTIALS 環境變數")
-
-# **確保 JSON 格式正確**
-try:
-    json.loads(cred_json)
-except json.JSONDecodeError as e:
-    print(f"❌ GOOGLE_APPLICATION_CREDENTIALS 格式錯誤: {e}", file=sys.stderr)
-    raise ValueError("❌ GOOGLE_APPLICATION_CREDENTIALS 格式錯誤，請確認環境變數內容")
-
-# **寫入憑證 JSON 檔案**
-os.makedirs(os.path.dirname(cred_path), exist_ok=True)
-with open(cred_path, "w") as f:
-    f.write(cred_json)
-
-# **設置 GOOGLE_APPLICATION_CREDENTIALS 讓 Google Cloud SDK 能讀取**
-os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
-print("✅ Google Cloud 憑證已設置", file=sys.stderr)
-
 # **讀取 OpenAI API Key**
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-if not client.api_key:
+openai.api_key = os.getenv("OPENAI_API_KEY")
+if not openai.api_key:
     print("❌ OPENAI_API_KEY 環境變數未設置", file=sys.stderr)
-    raise ValueError("❌ OpenAI API Key 未設置，請確認環境變數 OPENAI_API_KEY")
+    raise ValueError("❌ OpenAI API Key 未設置，請確認環境變數 `OPENAI_API_KEY`")
 
 
 @app.route("/upload", methods=["POST"])
@@ -66,26 +43,38 @@ def upload_file():
 
 
 def process_image(image_file):
-    """使用 Google Cloud Vision API 進行 OCR"""
+    """使用 Google Cloud Vision API 進行 OCR，並等待確保獲取完整數據"""
     client = vision.ImageAnnotatorClient()
 
-    # **確保圖片格式正確**
-    content = io.BytesIO(image_file.read())
-    image = vision.Image(content=content.getvalue())
-    response = client.text_detection(image=image)
-    texts = response.text_annotations
+    retry_attempts = 3  # ✅ OCR 最高重試次數
+    for attempt in range(retry_attempts):
+        try:
+            print(f"🟡 嘗試 OCR 分析，第 {attempt + 1} 次...", file=sys.stderr)
 
-    if not texts:
-        return {"status": "error", "message": "OCR 無法識別文字"}
+            # **確保圖片格式正確**
+            content = io.BytesIO(image_file.read())
+            image = vision.Image(content=content.getvalue())
 
-    raw_text = texts[0].description  # 取得 OCR 解析的文字
-    print("\n🔍 OCR 解析結果：")
-    print(raw_text)
+            response = client.text_detection(image=image)
+            texts = response.text_annotations
 
-    # **使用 OpenAI 分析 OCR 結果**
-    extracted_data = extract_with_openai(raw_text)
+            if not texts:
+                print(f"⚠️ 第 {attempt + 1} 次 OCR 無法識別文字，等待 1 秒後重試...", file=sys.stderr)
+                time.sleep(1)
+                continue  # 重試
 
-    return extracted_data
+            raw_text = texts[0].description  # 取得 OCR 解析的文字
+            print("\n🔍 OCR 解析結果：")
+            print(raw_text)
+
+            # **使用 OpenAI 分析 OCR 結果**
+            return extract_with_openai(raw_text)
+
+        except Exception as e:
+            print(f"⚠️ OCR 解析失敗，第 {attempt + 1} 次: {e}", file=sys.stderr)
+            time.sleep(1)  # **等待 1 秒後重試**
+
+    return {"status": "error", "message": "OCR 解析失敗，請稍後再試"}
 
 
 def extract_with_openai(text):
@@ -100,39 +89,60 @@ def extract_with_openai(text):
     3. 商品價格（日幣，含稅），如果沒有則回傳 "N/A"
     4. 台幣報價（台幣約為日幣價格 * 0.35，結果應該無條件進位）
 
-    **請忽略數字中的 , 和 .，確保能正確讀取價格。**
+    **請忽略數字中的 `,` 和 `.`，確保能正確讀取價格。**
 
-    回應 JSON 格式如下：
-    {{"商品名稱": "...", "商品日幣價格 (含稅)": "...", "台幣報價": "..."}}
+    **輸出 JSON 格式如下**：
+    {{
+        "商品名稱": "...",
+        "商品日幣價格 (含稅)": "...",
+        "台幣報價": "..."
+    }}
     """
 
-    response = client.chat.completions.create(
-        model="gpt-4-turbo",
-        messages=[{"role": "system", "content": "你是一個專業的商品資料解析助手"},
-                  {"role": "user", "content": prompt}]
-    )
+    retry_attempts = 3  # ✅ OpenAI API 最高重試次數
+    for attempt in range(retry_attempts):
+        try:
+            print(f"🟡 嘗試與 OpenAI 交互，第 {attempt + 1} 次...", file=sys.stderr)
 
-    ai_result = response.choices[0].message.content
+            response = openai.ChatCompletion.create(
+                model="gpt-4-turbo",
+                messages=[
+                    {"role": "system", "content": "你是一個專業的商品資料解析助手"},
+                    {"role": "user", "content": prompt}
+                ]
+            )
 
-    # **確保 JSON 結構正確**
-    try:
-        ai_data = json.loads(ai_result)  # ✅ 使用 json.loads() 解析 JSON
-        price_jpy = ai_data.get("商品日幣價格 (含稅)", "N/A")
+            ai_result = response["choices"][0]["message"]["content"]
 
-        # **修正價格格式**：移除 , 和 .
-        price_jpy = int(price_jpy.replace(",", "").replace(".", "")) if price_jpy not in ["N/A", ""] else "N/A"
+            # **確保 JSON 結構正確**
+            ai_data = json.loads(ai_result)
 
-        # **台幣報價換算**：日幣 * 0.35 **無條件進位**
-        price_twd = math.ceil(price_jpy * 0.35) if price_jpy != "N/A" else "N/A"
+            # **修正價格格式**：移除 `,` 和 `.` 以確保數字正確
+            price_jpy = ai_data.get("商品日幣價格 (含稅)", "N/A")
+            if price_jpy not in ["N/A", ""]:
+                price_jpy = int("".join(filter(str.isdigit, price_jpy)))  # 只保留數字
 
-        return {
-            "status": "done",
-            "商品名稱": ai_data.get("商品名稱", "N/A"),
-            "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
-            "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
-        }
-    except Exception as e:
-        return {"status": "error", "message": f"OpenAI 解析失敗: {str(e)}"}
+            # **台幣報價換算**：日幣 * 0.35 **無條件進位**
+            price_twd = math.ceil(price_jpy * 0.35) if isinstance(price_jpy, int) else "N/A"
+
+            print("✅ OpenAI 分析完成！", file=sys.stderr)
+
+            return {
+                "status": "done",
+                "商品名稱": ai_data.get("商品名稱", "N/A"),
+                "商品日幣價格 (含稅)": f"{price_jpy} 円" if isinstance(price_jpy, int) else "N/A",
+                "台幣報價": f"{price_twd} 元" if isinstance(price_twd, int) else "N/A"
+            }
+
+        except json.JSONDecodeError as e:
+            print(f"⚠️ OpenAI 解析失敗，第 {attempt + 1} 次: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"⚠️ OpenAI API 呼叫錯誤，第 {attempt + 1} 次: {e}", file=sys.stderr)
+
+        # **等待 1 秒後重試**
+        time.sleep(1)
+
+    return {"status": "error", "message": "OpenAI 解析失敗，請稍後再試"}
 
 
 # **Render 需要這行來啟動 Flask**
