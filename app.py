@@ -17,19 +17,19 @@ app = Flask(__name__)
 CORS(app)
 
 # **讀取 Google Cloud API JSON 憑證**
-cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")  # 讀取 JSON 內容
+cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")  # 讀取 JSON 內容
 cred_path = "/opt/render/project/.creds/google_api.json"  # 指定存放路徑
 
 if not cred_json:
-    print("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON 環境變數未設置", file=sys.stderr)
-    raise ValueError("❌ 找不到 Google Cloud 憑證，請確認 `GOOGLE_APPLICATION_CREDENTIALS_JSON` 環境變數")
+    print("\u274c GOOGLE_APPLICATION_CREDENTIALS 環境變數未設置", file=sys.stderr)
+    raise ValueError("\u274c 找不到 Google Cloud 憑證，請確認 `GOOGLE_APPLICATION_CREDENTIALS` 環境變數")
 
 # **確保 JSON 格式正確**
 try:
     json.loads(cred_json)
 except json.JSONDecodeError as e:
-    print(f"❌ GOOGLE_APPLICATION_CREDENTIALS_JSON 格式錯誤: {e}", file=sys.stderr)
-    raise ValueError("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON 格式錯誤，請確認環境變數內容")
+    print(f"\u274c GOOGLE_APPLICATION_CREDENTIALS 格式錯誤: {e}", file=sys.stderr)
+    raise ValueError("\u274c GOOGLE_APPLICATION_CREDENTIALS 格式錯誤，請確認環境變數內容")
 
 # **寫入憑證 JSON 檔案**
 os.makedirs(os.path.dirname(cred_path), exist_ok=True)
@@ -38,13 +38,13 @@ with open(cred_path, "w") as f:
 
 # **設置 GOOGLE_APPLICATION_CREDENTIALS 讓 Google Cloud SDK 能讀取**
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
-print("✅ Google Cloud 憑證已設置", file=sys.stderr)
+print("\u2705 Google Cloud 憑證已設置", file=sys.stderr)
 
 # **讀取 OpenAI API Key**
 openai.api_key = os.getenv("OPENAI_API_KEY")
 if not openai.api_key:
-    print("❌ OPENAI_API_KEY 環境變數未設置", file=sys.stderr)
-    raise ValueError("❌ OpenAI API Key 未設置，請確認環境變數 `OPENAI_API_KEY`")
+    print("\u274c OPENAI_API_KEY 環境變數未設置", file=sys.stderr)
+    raise ValueError("\u274c OpenAI API Key 未設置，請確認環境變數 `OPENAI_API_KEY`")
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
@@ -60,7 +60,7 @@ def upload_file():
         result = process_image(file)
         return jsonify(result)
     except Exception as e:
-        print(f"❌ 伺服器錯誤: {str(e)}", file=sys.stderr)
+        print(f"\u274c 伺服器錯誤: {str(e)}", file=sys.stderr)
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
 
 def process_image(image_file):
@@ -77,7 +77,7 @@ def process_image(image_file):
         return {"status": "error", "message": "OCR 無法識別文字"}
 
     raw_text = texts[0].description  # 取得 OCR 解析的文字
-    print("\n🔍 OCR 解析結果：")
+    print("\n\U0001F50D OCR 解析結果：")
     print(raw_text)
 
     # **使用 OpenAI 分析 OCR 結果**
