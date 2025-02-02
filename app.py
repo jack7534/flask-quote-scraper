@@ -1,12 +1,14 @@
 import os
-import io  # ✅ 這裡確保 `io` 被使用
+import io
 import re
 import math
 from flask import Flask, request, jsonify
+from flask_cors import CORS  # ✅ 加入 CORS
 from google.cloud import vision
 
-# 初始化 Flask
+# **初始化 Flask**
 app = Flask(__name__)
+CORS(app)  # ✅ 允許跨域請求 (CodePen 才能正常請求)
 
 # **設定 Google Cloud API JSON 憑證**
 cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "mypython-449619-947c8f434081.json")
@@ -27,9 +29,7 @@ def upload_file():
         return jsonify({"status": "error", "message": "沒有選擇檔案"}), 400
 
     try:
-        # ✅ 修正：確保 `file` 轉為 `BytesIO`
-        image_stream = io.BytesIO(file.read())
-        result = process_image(image_stream)
+        result = process_image(file)
         return jsonify(result)
     except Exception as e:
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
@@ -39,8 +39,9 @@ def process_image(image_file):
     """使用 Google Cloud Vision API 進行 OCR"""
     client = vision.ImageAnnotatorClient()
 
-    # ✅ 確保 `image_file` 是 binary stream
-    image = vision.Image(content=image_file.read())
+    # **確保圖片格式正確**
+    content = io.BytesIO(image_file.read())  # ✅ 修正 IO 問題
+    image = vision.Image(content=content.getvalue())
     response = client.text_detection(image=image)
     texts = response.text_annotations
 
@@ -74,7 +75,7 @@ def extract_godzilla_data(text):
     return {
         "status": "done",
         "商品名稱": product_name,
-        "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy > 0 else "N/A",
+        "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy > 0 else "N/A",  # ✅ 確保前端可讀取
         "台幣報價": f"{price_twd} 元" if price_jpy > 0 else "N/A"
     }
 
@@ -113,4 +114,4 @@ def extract_price(text):
 
 # **Render 需要這行來啟動 Flask**
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=10000)  # ✅ 確保 Render 正確執行
