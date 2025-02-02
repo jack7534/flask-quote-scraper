@@ -17,7 +17,7 @@ app = Flask(__name__)
 CORS(app)
 
 # **設定 Google Cloud API JSON 憑證**
-cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "mypython-449619-947c8f434081.json")
+cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS", "mypython-449619-ac9b2e9bd9c2.json")
 if not os.path.exists(cred_path):
     raise FileNotFoundError(f"找不到 Google API 憑證: {cred_path}")
 
