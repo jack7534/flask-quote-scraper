@@ -18,18 +18,24 @@ CORS(app)
 
 # **設定 Google Cloud API JSON 憑證**
 google_api_key = os.getenv("GOOGLE_API_KEY")
-cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")  # 應該是 JSON 字符串
+cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS_JSON")  # 環境變數應該存放 JSON 字符串
 cred_path = "/opt/render/project/.creds/google_api.json"  # 指定存放位置
 
-if cred_json:
-    os.makedirs(os.path.dirname(cred_path), exist_ok=True)
-    with open(cred_path, "w") as f:
-        f.write(cred_json)
-    os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
-    print("✅ Google Cloud 憑證已設置", file=sys.stderr)
-else:
+if not cred_json:
     print("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON 環境變數未設置", file=sys.stderr)
     raise ValueError("❌ 找不到 Google Cloud 憑證，請確認 `GOOGLE_APPLICATION_CREDENTIALS_JSON` 環境變數")
+
+try:
+    json.loads(cred_json)  # 確保 JSON 格式正確
+except json.JSONDecodeError as e:
+    print(f"❌ GOOGLE_APPLICATION_CREDENTIALS_JSON 格式錯誤: {e}", file=sys.stderr)
+    raise ValueError("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON 格式錯誤，請確認環境變數內容")
+
+os.makedirs(os.path.dirname(cred_path), exist_ok=True)
+with open(cred_path, "w") as f:
+    f.write(cred_json)
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+print("✅ Google Cloud 憑證已設置", file=sys.stderr)
 
 # **讀取 OpenAI API Key**
 openai.api_key = os.getenv("OPENAI_API_KEY")
