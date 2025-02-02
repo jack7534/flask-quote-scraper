@@ -1,9 +1,9 @@
 import os
 import io
-import re
-import math
 import json
+import math
 import openai
+import sys
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.cloud import vision
@@ -26,12 +26,15 @@ if cred_json:
     with open(cred_path, "w") as f:
         f.write(cred_json)
     os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
+    print("✅ Google Cloud 憑證已設置", file=sys.stderr)
 else:
+    print("❌ GOOGLE_APPLICATION_CREDENTIALS_JSON 環境變數未設置", file=sys.stderr)
     raise ValueError("❌ 找不到 Google Cloud 憑證，請確認 `GOOGLE_APPLICATION_CREDENTIALS_JSON` 環境變數")
 
 # **讀取 OpenAI API Key**
 openai.api_key = os.getenv("OPENAI_API_KEY")
 if not openai.api_key:
+    print("❌ OPENAI_API_KEY 環境變數未設置", file=sys.stderr)
     raise ValueError("❌ OpenAI API Key 未設置，請確認環境變數 `OPENAI_API_KEY`")
 
 @app.route("/upload", methods=["POST"])
@@ -48,6 +51,7 @@ def upload_file():
         result = process_image(file)
         return jsonify(result)
     except Exception as e:
+        print(f"❌ 伺服器錯誤: {str(e)}", file=sys.stderr)
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
 
 def process_image(image_file):
