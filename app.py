@@ -1,4 +1,4 @@
-# 可抓取 樂天、雅虎、奇摩、松本清等等
+# 可抓取 樂天、雅虎、奇摩、松本清 版本2
 import os
 import io
 import json
@@ -97,9 +97,12 @@ def extract_price_and_name(ocr_text):
     # **🔍 嘗試抓取價格**
     price_candidates = []
     for line in lines:
-        price_match = re.findall(r"([\d,]+)円", line)
+        # **🔹 支援 `￥19800` 或 `￥19,800 (税込)` 格式**
+        price_match = re.findall(r"[￥¥]?\s*([\d,]+)\s*(円|\(税込\)|$)", line)
         if price_match:
-            price_candidates += [int(p.replace(",", "")) for p in price_match]
+            for price_tuple in price_match:
+                price_value = int(price_tuple[0].replace(",", ""))
+                price_candidates.append(price_value)
 
     # **🔍 嘗試判定含稅價**
     if price_candidates:
@@ -112,7 +115,6 @@ def extract_price_and_name(ocr_text):
         "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
         "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
     }
-
 
 # **啟動 Flask**
 if __name__ == "__main__":
