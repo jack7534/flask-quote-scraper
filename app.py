@@ -1,4 +1,4 @@
-#傳遞 OCR 結果給 OpenAI GPT 來提取商品名稱 & 價格
+#GPT說可以正常運作不知道真的假的
 import os
 import io
 import json
@@ -6,7 +6,7 @@ import math
 import openai
 import sys
 import time
-import re  # ✅ 新增正則表達式來提取數據
+import re
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.cloud import vision
@@ -20,26 +20,19 @@ app = Flask(__name__)
 CORS(app)
 
 # **讀取 Google Cloud API JSON 憑證**
-cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")  # 讀取 JSON 內容
-cred_path = "/opt/render/project/.creds/google_api.json"  # 指定存放路徑
+cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+cred_path = "/opt/render/project/.creds/google_api.json"
 
 if not cred_json:
     print("\u274c GOOGLE_APPLICATION_CREDENTIALS 環境變數未設置", file=sys.stderr)
-    raise ValueError("\u274c 找不到 Google Cloud 憑證，請確認 GOOGLE_APPLICATION_CREDENTIALS 環境變數")
-
-# **確保 JSON 格式正確**
-try:
-    json.loads(cred_json)
-except json.JSONDecodeError as e:
-    print(f"\u274c GOOGLE_APPLICATION_CREDENTIALS 格式錯誤: {e}", file=sys.stderr)
-    raise ValueError("\u274c GOOGLE_APPLICATION_CREDENTIALS 格式錯誤，請確認環境變數內容")
+    raise ValueError("\u274c 找不到 Google Cloud 憑證")
 
 # **寫入憑證 JSON 檔案**
 os.makedirs(os.path.dirname(cred_path), exist_ok=True)
 with open(cred_path, "w") as f:
     f.write(cred_json)
 
-# **設置 GOOGLE_APPLICATION_CREDENTIALS 讓 Google Cloud SDK 能讀取**
+# **設置 GOOGLE_APPLICATION_CREDENTIALS**
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
 print("\u2705 Google Cloud 憑證已設置", file=sys.stderr)
 
@@ -47,8 +40,7 @@ print("\u2705 Google Cloud 憑證已設置", file=sys.stderr)
 openai.api_key = os.getenv("OPENAI_API_KEY")
 if not openai.api_key:
     print("\u274c OPENAI_API_KEY 環境變數未設置", file=sys.stderr)
-    raise ValueError("\u274c OpenAI API Key 未設置，請確認環境變數 OPENAI_API_KEY")
-
+    raise ValueError("\u274c OpenAI API Key 未設置")
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
@@ -67,7 +59,6 @@ def upload_file():
         print(f"\u274c 伺服器錯誤: {str(e)}", file=sys.stderr)
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
 
-
 def process_image(image_file):
     """使用 Google Cloud Vision API 進行 OCR"""
     client = vision.ImageAnnotatorClient()
@@ -77,7 +68,6 @@ def process_image(image_file):
         return {"status": "error", "message": "圖片讀取失敗"}
 
     image = vision.Image(content=content)
-
     time.sleep(1)
 
     response = client.text_detection(image=image)
@@ -93,32 +83,32 @@ def process_image(image_file):
     print("\n🔍 OCR 解析結果：")
     print(raw_text)
 
+    # **使用 OpenAI GPT 解析**
     extracted_data = extract_with_openai(raw_text)
-
-    extracted_data["ocr_text"] = raw_text  # ✅ 回傳完整的 OCR 文字給前端
+    extracted_data["ocr_text"] = raw_text  # ✅ 確保回傳 OCR 文字
 
     return extracted_data
 
-
 def extract_with_openai(text):
-    """使用 OpenAI 來解析 OCR 結果並提取關鍵資訊"""
+    """使用 OpenAI 解析 OCR 結果"""
     prompt = f"""
     以下是從圖片 OCR 解析出的日文文本：
     {text}
 
-    請從這些文本中提取：
+    請提取：
     1. 商品名稱
-    2. 商品價格（日幣，含稅，如果沒有則回傳 "N/A"）
-    3. 台幣報價（台幣約為日幣價格 * 0.35，結果應該無條件進位）
+    2. 商品價格（日幣，未稅）
+    3. 商品價格（日幣，含稅，若無則回傳 "N/A"）
+    4. 台幣報價（無條件進位：日幣價格 * 0.35）
 
-    回應 JSON 格式如下：
+    回應 JSON 格式：
     {{"商品名稱": "...", "商品日幣價格 (含稅)": "...", "台幣報價": "..."}}
     """
 
     try:
         response = openai.ChatCompletion.create(
             model="gpt-4-turbo",
-            messages=[{"role": "system", "content": "你是一個專業的商品資料解析助手"},
+            messages=[{"role": "system", "content": "你是一個商品價格解析助手"},
                       {"role": "user", "content": prompt}]
         )
 
@@ -126,8 +116,11 @@ def extract_with_openai(text):
         ai_data = json.loads(ai_result)
 
         price_jpy = ai_data.get("商品日幣價格 (含稅)", "N/A")
-        price_jpy = int(price_jpy.replace(",", "")) if price_jpy != "N/A" else "N/A"
-        price_twd = math.ceil(price_jpy * 0.35) if price_jpy != "N/A" else "N/A"
+        if price_jpy != "N/A":
+            price_jpy = int(price_jpy.replace(",", ""))
+            price_twd = math.ceil(price_jpy * 0.35)
+        else:
+            price_twd = "N/A"
 
         return {
             "status": "done",
@@ -137,7 +130,6 @@ def extract_with_openai(text):
         }
     except Exception as e:
         return {"status": "error", "message": f"OpenAI 解析失敗: {str(e)}"}
-
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
