@@ -1,4 +1,4 @@
-# 可以比對含稅未稅 版本
+# 可判定BQ、松本清等 PC頁面 版本
 import os
 import io
 import json
@@ -95,20 +95,37 @@ def extract_price_and_name(ocr_text):
             price_index = i
             break
 
-    # **🔍 嘗試抓取價格上方的商品名稱**
-    if price_index > 2:  # 確保有足夠的行數可回溯
+    # **🔍 嘗試抓取特定網站的商品名稱 (BicCamera, Matsukiyo)**
+    if "matsukiyo" in ocr_text.lower():
+        for i, line in enumerate(lines):
+            if "matsukiyo" in line.lower():
+                product_name = lines[i + 1].strip() if i + 1 < len(lines) else "未知商品"
+                break
+    elif "biccamera" in ocr_text.lower() or "ビックカメラ" in ocr_text:
+        for i, line in enumerate(lines):
+            if "|" in line:
+                product_name = lines[i + 1].strip() if i + 1 < len(lines) else "未知商品"
+                break
+
+    # **🔍 如果未找到特定網站的名稱，則使用一般邏輯**
+    if product_name == "未知商品" and price_index > 2:
         for i in range(price_index - 1, max(price_index - 5, -1), -1):
             if len(lines[i]) > 5 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント|https?)", lines[i]):
                 product_name = lines[i].strip()
                 break
 
-    # **🔍 優先抓取含稅價格**
+    # **🔍 優先抓取含稅價格，或計算含稅價格**
     tax_price_match = re.search(r"¥\s*([\d,]+)\s*\(税込\)", ocr_text)
     normal_price_match = re.search(r"¥\s*([\d,]+)", ocr_text)
     alt_price_match = re.search(r"([\d,]+)\s*円", ocr_text)
+    tax_rate_match = re.search(r"税率(\d+)%\s*([\d,]+)円", ocr_text)
 
     if tax_price_match:
         price_jpy = tax_price_match.group(1).replace(",", "")  # **含稅價格優先**
+    elif tax_rate_match:
+        base_price = int(tax_rate_match.group(2).replace(",", ""))
+        tax_rate = int(tax_rate_match.group(1)) / 100
+        price_jpy = str(math.ceil(base_price * (1 + tax_rate)))  # **計算含稅價格**
     elif normal_price_match:
         price_jpy = normal_price_match.group(1).replace(",", "")  # **未標明含稅價格**
     elif alt_price_match:
@@ -123,7 +140,6 @@ def extract_price_and_name(ocr_text):
         "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
         "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
     }
-
 
 # **啟動 Flask**
 if __name__ == "__main__":
