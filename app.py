@@ -1,4 +1,4 @@
-# 正確抓取 含稅未稅價4
+# 正確抓取 商品名測試
 import os
 import io
 import json
