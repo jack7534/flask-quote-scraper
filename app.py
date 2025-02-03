@@ -72,7 +72,7 @@ def process_image(image_file):
     client = vision.ImageAnnotatorClient()
 
     # **確保圖片格式正確**
-    content = image_file.stream.read()  # ✅ 使用 stream 方式讀取，確保數據完整
+    content = image_file.stream.read()
     if not content:
         return {"status": "error", "message": "圖片讀取失敗"}
 
@@ -83,6 +83,7 @@ def process_image(image_file):
 
     response = client.text_detection(image=image)
 
+    # **檢查 API 是否返回錯誤**
     if response.error.message:
         return {"status": "error", "message": f"Google Vision API 錯誤: {response.error.message}"}
 
@@ -90,14 +91,17 @@ def process_image(image_file):
     if not texts:
         return {"status": "error", "message": "OCR 無法識別文字"}
 
-    raw_text = texts[0].description  # 取得 OCR 解析的文字
+    raw_text = texts[0].description  # ✅ 正確取得 OCR 文字
     print("\n🔍 OCR 解析結果：")
     print(raw_text)
 
     # **使用 OpenAI 分析 OCR 結果**
     extracted_data = extract_with_openai(raw_text)
 
-    return extracted_data
+    # ✅ **回傳完整的 OCR 文字給前端**
+    extracted_data["ocr_text"] = raw_text  # <--- **新增這一行**
+
+    return extracted_data  # ✅ **現在 JavaScript 端可以讀取 "ocr_text"**
 
 
 def extract_with_openai(text):
