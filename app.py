@@ -1,4 +1,6 @@
+#GPT說可以抓取我網站價格跟名字
 import os
+
 import re
 import math
 import time
@@ -88,10 +90,11 @@ def extract_price_and_name(ocr_text):
                 break
 
     # **🔍 嘗試抓取價格**
-    tax_price_match = re.search(r"[¥]\s*([\d,]+)\s*\(税込\)", ocr_text)  # **直接含稅價格**
-    tax_rate_match = re.search(r"税率(\d+)%\s*([\d,]+)円", ocr_text)  # **稅率與未稅價格**
+    tax_price_match = re.search(r"[¥]?\s*([\d,]+)\s*円?\s*\(税込\)", ocr_text)  # **直接含稅價格**
+    tax_rate_match = re.search(r"税率\s*(\d+)%\s*([\d,]+)円", ocr_text)  # **稅率與未稅價格**
     base_price_match = re.search(r"([\d,]+)\s*円\s*\(税抜\)", ocr_text)  # **未稅價格**
-    normal_price_match = re.search(r"[¥]\s*([\d,]+)", ocr_text)  # **一般價格格式**
+    tmall_price_match = re.search(r"[¥]?\s*([\d,]+)\s*円(?:\s*送料無料)?", ocr_text)  # **天貓格式**
+    yahoo_price_match = re.search(r"[¥]?\s*([\d,]+)\s*円(?:\s*\(税\s*\d+\s*円\))?", ocr_text)  # **奇摩格式**
 
     if tax_price_match:
         price_jpy = tax_price_match.group(1).replace(",", "")  # **直接使用含稅價格**
@@ -99,8 +102,10 @@ def extract_price_and_name(ocr_text):
         base_price = int(base_price_match.group(1).replace(",", ""))
         tax_rate = int(tax_rate_match.group(1)) / 100
         price_jpy = str(math.ceil(base_price * (1 + tax_rate)))  # **計算含稅價格**
-    elif normal_price_match:
-        price_jpy = normal_price_match.group(1).replace(",", "")  # **未標明含稅價格**
+    elif tmall_price_match:
+        price_jpy = tmall_price_match.group(1).replace(",", "")  # **天貓格式**
+    elif yahoo_price_match:
+        price_jpy = yahoo_price_match.group(1).replace(",", "")  # **奇摩格式**
 
     if price_jpy != "N/A":
         price_twd = str(math.ceil(int(price_jpy) * 0.35))  # **台幣換算**
@@ -111,6 +116,7 @@ def extract_price_and_name(ocr_text):
         "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
         "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
     }
+
 
 # **啟動 Flask**
 if __name__ == "__main__":
