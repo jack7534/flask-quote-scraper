@@ -1,4 +1,4 @@
-# 正確抓取 含稅未稅價2
+# 正確抓取 含稅未稅價3
 import os
 import io
 import json
@@ -78,6 +78,7 @@ def process_image(image_file):
     extracted_data["ocr_text"] = raw_text
     return extracted_data
 
+
 def extract_price_and_name(ocr_text):
     """從 OCR 文字中提取商品名稱 & 價格"""
     lines = ocr_text.split("\n")
@@ -85,30 +86,34 @@ def extract_price_and_name(ocr_text):
     price_jpy = "N/A"
     price_twd = "N/A"
 
-    # **🔍 嘗試抓取商品名稱**
-    for line in lines:
-        clean_line = line.strip()
-        if len(clean_line) > 6 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント|送料無料|条件|カート)", clean_line):
-            if "http" not in clean_line and "colorDisplayCode" not in clean_line:
-                product_name = clean_line
+    # **🔍 找到價格行的位置**
+    price_index = -1
+    for i, line in enumerate(lines):
+        if re.search(r"[¥]\s*[\d,]+", line):  # 可能的日幣價格格式
+            price_index = i
+            break
+
+    # **🔍 嘗試抓取價格上方的商品名稱**
+    if price_index > 2:  # 確保有足夠的行數可回溯
+        for i in range(price_index - 1, max(price_index - 5, -1), -1):
+            if len(lines[i]) > 5 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント|https?)", lines[i]):
+                product_name = lines[i].strip()
                 break
 
     # **🔍 優先抓取含稅價格，或計算含稅價格**
-    tax_price_match = re.search(r"¥\s*([\d,]+)\s*\(税込\)", ocr_text)
-    normal_price_match = re.search(r"¥\s*([\d,]+)", ocr_text)
-    alt_price_match = re.search(r"([\d,]+)\s*円", ocr_text)
-    tax_rate_match = re.search(r"税率(\d+)%\s*([\d,]+)円", ocr_text)
+    tax_price_match = re.search(r"¥\s*([\d,]+)\s*\(税込\)", ocr_text)  # 直接含稅價格
+    tax_rate_match = re.search(r"税率(\d+)%\s*([\d,]+)円", ocr_text)  # 稅率與未稅價格
+    base_price_match = re.search(r"([\d,]+)\s*円\s*\(税抜\)", ocr_text)  # 未稅價格
+    normal_price_match = re.search(r"¥\s*([\d,]+)", ocr_text)  # 其他價格格式
 
     if tax_price_match:
-        price_jpy = tax_price_match.group(1).replace(",", "")  # **含稅價格優先**
-    elif tax_rate_match:
-        base_price = int(tax_rate_match.group(2).replace(",", ""))
+        price_jpy = tax_price_match.group(1).replace(",", "")  # **含稅價格優先，不再計算**
+    elif base_price_match and tax_rate_match:
+        base_price = int(base_price_match.group(1).replace(",", ""))
         tax_rate = int(tax_rate_match.group(1)) / 100
         price_jpy = str(math.ceil(base_price * (1 + tax_rate)))  # **計算含稅價格**
     elif normal_price_match:
         price_jpy = normal_price_match.group(1).replace(",", "")  # **未標明含稅價格**
-    elif alt_price_match:
-        price_jpy = alt_price_match.group(1).replace(",", "")  # **一般日幣價格**
 
     if price_jpy != "N/A":
         price_twd = str(math.ceil(int(price_jpy) * 0.35))  # **台幣換算**
