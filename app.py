@@ -1,4 +1,4 @@
-#直接抓 OCR 並且判定對應資料
+# 可抓取 樂天、雅虎、奇摩、松本清等等
 import os
 import io
 import json
@@ -87,31 +87,23 @@ def extract_price_and_name(ocr_text):
     product_name = "未知商品"
     price_jpy = "N/A"
     price_twd = "N/A"
-    tax_rate = 0.1  # 預設消費稅 10%
 
     # **🔍 嘗試抓取商品名稱**
     for line in lines:
-        if len(line) > 5 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント|送料無料)", line):
+        if len(line) > 5 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント|送料無料|セール)", line):
             product_name = line.strip()
             break
 
     # **🔍 嘗試抓取價格**
-    tax_price_match = re.search(r"([\d,]+)円\s*\(税込\)", ocr_text)  # 含稅價
-    untaxed_price_match = re.search(r"([\d,]+)円\s*\(税抜\)", ocr_text)  # 未稅價
-    general_price_match = re.search(r"￥\s*([\d,]+)", ocr_text)  # `￥ XXXX` 格式
-    tax_percentage_match = re.search(r"消費税\s*(\d+)%", ocr_text)  # 找到消費稅率
+    price_candidates = []
+    for line in lines:
+        price_match = re.findall(r"([\d,]+)円", line)
+        if price_match:
+            price_candidates += [int(p.replace(",", "")) for p in price_match]
 
-    # **優先使用含稅價**
-    if tax_price_match:
-        price_jpy = tax_price_match.group(1).replace(",", "")
-    elif untaxed_price_match:
-        base_price = int(untaxed_price_match.group(1).replace(",", ""))
-        tax_rate = int(tax_percentage_match.group(1)) / 100 if tax_percentage_match else tax_rate
-        price_jpy = str(math.ceil(base_price * (1 + tax_rate)))
-    elif general_price_match:
-        price_jpy = general_price_match.group(1).replace(",", "")
-
-    if price_jpy != "N/A":
+    # **🔍 嘗試判定含稅價**
+    if price_candidates:
+        price_jpy = max(price_candidates)  # 取最大價格當作含稅價
         price_twd = str(math.ceil(int(price_jpy) * 0.35))  # **台幣換算**
 
     return {
