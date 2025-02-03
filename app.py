@@ -1,4 +1,4 @@
-# 可抓取 樂天、雅虎、奇摩、松本清 版本2
+# 可抓取 樂天、雅虎、奇摩、松本清 版本3
 import os
 import io
 import json
@@ -49,7 +49,6 @@ def upload_file():
     except Exception as e:
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
 
-
 def process_image(image_file):
     """使用 Google Cloud Vision API 進行 OCR 並提取商品名稱 & 價格"""
     client = vision.ImageAnnotatorClient()
@@ -59,7 +58,6 @@ def process_image(image_file):
 
     image = vision.Image(content=content)
     time.sleep(1)  # **確保完整讀取**
-
     response = client.text_detection(image=image)
 
     if response.error.message:
@@ -90,24 +88,35 @@ def extract_price_and_name(ocr_text):
 
     # **🔍 嘗試抓取商品名稱**
     for line in lines:
-        if len(line) > 5 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント|送料無料|セール)", line):
+        if len(line) > 5 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント)", line):
             product_name = line.strip()
             break
 
     # **🔍 嘗試抓取價格**
-    price_candidates = []
-    for line in lines:
-        # **🔹 支援 `￥19800` 或 `￥19,800 (税込)` 格式**
-        price_match = re.findall(r"[￥¥]?\s*([\d,]+)\s*(円|\(税込\)|$)", line)
-        if price_match:
-            for price_tuple in price_match:
-                price_value = int(price_tuple[0].replace(",", ""))
-                price_candidates.append(price_value)
+    tax_included_price = None
+    all_prices = []
 
-    # **🔍 嘗試判定含稅價**
-    if price_candidates:
-        price_jpy = max(price_candidates)  # 取最大價格當作含稅價
-        price_twd = str(math.ceil(int(price_jpy) * 0.35))  # **台幣換算**
+    for line in lines:
+        # **優先找含稅價格**
+        tax_match = re.search(r"([\d,]+)円\s*\(税込\)", line)
+        if tax_match:
+            tax_included_price = int(tax_match.group(1).replace(",", ""))
+            break  # 找到含稅價格後就直接停止
+
+        # **其次抓取所有 `円` 之前的數字**
+        price_match = re.findall(r"([\d,]+)円", line)
+        if price_match:
+            all_prices.extend([int(p.replace(",", "")) for p in price_match])
+
+    # **優先使用含稅價格**
+    if tax_included_price:
+        price_jpy = tax_included_price
+    elif all_prices:
+        price_jpy = max(all_prices)  # **選擇最大值作為主要價格**
+
+    # **換算台幣價格**
+    if price_jpy != "N/A":
+        price_twd = str(math.ceil(int(price_jpy) * 0.35))
 
     return {
         "status": "done",
