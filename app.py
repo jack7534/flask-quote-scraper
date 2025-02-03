@@ -1,9 +1,6 @@
-# 正確抓取 商品名測試2
 import os
-import io
-import json
-import math
 import re
+import math
 import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -32,6 +29,7 @@ with open(cred_path, "w") as f:
 # **設置 GOOGLE_APPLICATION_CREDENTIALS**
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
 
+
 @app.route("/upload", methods=["POST"])
 def upload_file():
     """上傳圖片並進行 OCR 分析"""
@@ -47,6 +45,7 @@ def upload_file():
         return jsonify(result)
     except Exception as e:
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
+
 
 def process_image(image_file):
     """使用 Google Cloud Vision API 進行 OCR 並提取商品名稱 & 價格"""
@@ -124,6 +123,7 @@ def extract_price_and_name(ocr_text):
         "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
         "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
     }
+
 
 # **啟動 Flask**
 if __name__ == "__main__":
