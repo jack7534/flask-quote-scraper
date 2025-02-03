@@ -1,4 +1,4 @@
-# 測試 UNIQLO 、 哥吉拉
+# 抓取舊版本的可用性，並且讓 ¥ 這種格式也能正確抓取
 import os
 import io
 import json
@@ -94,14 +94,23 @@ def extract_price_and_name(ocr_text):
             product_name = line.strip()
             break
 
-    # **🔍 優先抓取含稅價格**
-    tax_price_match = re.search(r"¥\s*([\d,]+)\s*\(税込\)", ocr_text)
-    normal_price_match = re.search(r"¥\s*([\d,]+)", ocr_text)
+    # **🔍 先嘗試用舊方法抓價格**
+    tax_price_match = re.search(r"([\d,]+)\s*円?\s*\(税込\)", ocr_text)  # 含稅價格
+    base_price_match = re.search(r"([\d,]+)\s*円?\s*\(税抜\)", ocr_text)  # 稅前價格
+    tax_rate_match = re.search(r"(\d+)%", ocr_text)  # 稅率
 
     if tax_price_match:
         price_jpy = tax_price_match.group(1).replace(",", "")  # **含稅價格**
-    elif normal_price_match:
-        price_jpy = normal_price_match.group(1).replace(",", "")  # **未標明含稅價格**
+    elif base_price_match:
+        base_price = int(base_price_match.group(1).replace(",", ""))
+        tax_rate = int(tax_rate_match.group(1)) / 100 if tax_rate_match else 0.10  # 預設10%稅
+        price_jpy = str(math.ceil(base_price * (1 + tax_rate)))  # 計算含稅價格
+
+    # **🔍 如果舊方法沒找到，再用 `¥ XXXX` 搜索**
+    if price_jpy == "N/A":
+        yen_price_match = re.search(r"¥\s*([\d,]+)", ocr_text)
+        if yen_price_match:
+            price_jpy = yen_price_match.group(1).replace(",", "")
 
     if price_jpy != "N/A":
         price_twd = str(math.ceil(int(price_jpy) * 0.35))  # **台幣換算**
