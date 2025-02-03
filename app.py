@@ -1,12 +1,10 @@
-#GPT說可以正常運作不知道真的假的
+#直接在後端判讀 OCR
 import os
 import io
 import json
 import math
-import openai
-import sys
-import time
 import re
+import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from google.cloud import vision
@@ -24,8 +22,7 @@ cred_json = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 cred_path = "/opt/render/project/.creds/google_api.json"
 
 if not cred_json:
-    print("\u274c GOOGLE_APPLICATION_CREDENTIALS 環境變數未設置", file=sys.stderr)
-    raise ValueError("\u274c 找不到 Google Cloud 憑證")
+    raise ValueError("❌ 找不到 Google Cloud 憑證")
 
 # **寫入憑證 JSON 檔案**
 os.makedirs(os.path.dirname(cred_path), exist_ok=True)
@@ -34,13 +31,7 @@ with open(cred_path, "w") as f:
 
 # **設置 GOOGLE_APPLICATION_CREDENTIALS**
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
-print("\u2705 Google Cloud 憑證已設置", file=sys.stderr)
 
-# **讀取 OpenAI API Key**
-openai.api_key = os.getenv("OPENAI_API_KEY")
-if not openai.api_key:
-    print("\u274c OPENAI_API_KEY 環境變數未設置", file=sys.stderr)
-    raise ValueError("\u274c OpenAI API Key 未設置")
 
 @app.route("/upload", methods=["POST"])
 def upload_file():
@@ -56,19 +47,18 @@ def upload_file():
         result = process_image(file)
         return jsonify(result)
     except Exception as e:
-        print(f"\u274c 伺服器錯誤: {str(e)}", file=sys.stderr)
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
 
-def process_image(image_file):
-    """使用 Google Cloud Vision API 進行 OCR"""
-    client = vision.ImageAnnotatorClient()
 
-    content = image_file.stream.read()
+def process_image(image_file):
+    """使用 Google Cloud Vision API 進行 OCR 並提取商品名稱 & 價格"""
+    client = vision.ImageAnnotatorClient()
+    content = image_file.read()
     if not content:
         return {"status": "error", "message": "圖片讀取失敗"}
 
     image = vision.Image(content=content)
-    time.sleep(1)
+    time.sleep(1)  # **確保完整讀取**
 
     response = client.text_detection(image=image)
 
@@ -79,58 +69,46 @@ def process_image(image_file):
     if not texts:
         return {"status": "error", "message": "OCR 無法識別文字"}
 
-    raw_text = texts[0].description
+    raw_text = texts[0].description  # ✅ **OCR 解析結果**
     print("\n🔍 OCR 解析結果：")
     print(raw_text)
 
-    # **使用 OpenAI GPT 解析**
-    extracted_data = extract_with_openai(raw_text)
-    extracted_data["ocr_text"] = raw_text  # ✅ 確保回傳 OCR 文字
+    # **從 OCR 文字中提取商品名稱 & 價格**
+    extracted_data = extract_price_and_name(raw_text)
 
+    # **✅ 確保返回完整的數據**
+    extracted_data["ocr_text"] = raw_text
     return extracted_data
 
-def extract_with_openai(text):
-    """使用 OpenAI 解析 OCR 結果"""
-    prompt = f"""
-    以下是從圖片 OCR 解析出的日文文本：
-    {text}
 
-    請提取：
-    1. 商品名稱
-    2. 商品價格（日幣，未稅）
-    3. 商品價格（日幣，含稅，若無則回傳 "N/A"）
-    4. 台幣報價（無條件進位：日幣價格 * 0.35）
+def extract_price_and_name(ocr_text):
+    """從 OCR 文字中提取商品名稱 & 價格"""
+    lines = ocr_text.split("\n")
+    product_name = "未知商品"
+    price_jpy = "N/A"
+    price_twd = "N/A"
 
-    回應 JSON 格式：
-    {{"商品名稱": "...", "商品日幣價格 (含稅)": "...", "台幣報價": "..."}}
-    """
+    # **🔍 嘗試抓取商品名稱**
+    for line in lines:
+        if len(line) > 5 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント)", line):
+            product_name = line.strip()
+            break
 
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4-turbo",
-            messages=[{"role": "system", "content": "你是一個商品價格解析助手"},
-                      {"role": "user", "content": prompt}]
-        )
+    # **🔍 嘗試抓取價格**
+    price_match = re.search(r"([\d,]+)円", ocr_text)
+    if price_match:
+        price_jpy = price_match.group(1).replace(",", "")  # **日幣價格**
+        price_twd = str(math.ceil(int(price_jpy) * 0.35))  # **台幣換算**
 
-        ai_result = response["choices"][0]["message"]["content"]
-        ai_data = json.loads(ai_result)
+    return {
+        "status": "done",
+        "商品名稱": product_name,
+        "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
+        "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
+    }
 
-        price_jpy = ai_data.get("商品日幣價格 (含稅)", "N/A")
-        if price_jpy != "N/A":
-            price_jpy = int(price_jpy.replace(",", ""))
-            price_twd = math.ceil(price_jpy * 0.35)
-        else:
-            price_twd = "N/A"
 
-        return {
-            "status": "done",
-            "商品名稱": ai_data.get("商品名稱", "N/A"),
-            "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
-            "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
-        }
-    except Exception as e:
-        return {"status": "error", "message": f"OpenAI 解析失敗: {str(e)}"}
-
+# **啟動 Flask**
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
