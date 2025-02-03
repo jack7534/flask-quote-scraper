@@ -1,4 +1,4 @@
-# 可抓取 樂天、雅虎、奇摩、松本清 版本3
+# 測試 UNIQLO 、 哥吉拉
 import os
 import io
 import json
@@ -49,6 +49,7 @@ def upload_file():
     except Exception as e:
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
 
+
 def process_image(image_file):
     """使用 Google Cloud Vision API 進行 OCR 並提取商品名稱 & 價格"""
     client = vision.ImageAnnotatorClient()
@@ -58,6 +59,7 @@ def process_image(image_file):
 
     image = vision.Image(content=content)
     time.sleep(1)  # **確保完整讀取**
+
     response = client.text_detection(image=image)
 
     if response.error.message:
@@ -92,31 +94,17 @@ def extract_price_and_name(ocr_text):
             product_name = line.strip()
             break
 
-    # **🔍 嘗試抓取價格**
-    tax_included_price = None
-    all_prices = []
+    # **🔍 優先抓取含稅價格**
+    tax_price_match = re.search(r"¥\s*([\d,]+)\s*\(税込\)", ocr_text)
+    normal_price_match = re.search(r"¥\s*([\d,]+)", ocr_text)
 
-    for line in lines:
-        # **優先找含稅價格**
-        tax_match = re.search(r"([\d,]+)円\s*\(税込\)", line)
-        if tax_match:
-            tax_included_price = int(tax_match.group(1).replace(",", ""))
-            break  # 找到含稅價格後就直接停止
+    if tax_price_match:
+        price_jpy = tax_price_match.group(1).replace(",", "")  # **含稅價格**
+    elif normal_price_match:
+        price_jpy = normal_price_match.group(1).replace(",", "")  # **未標明含稅價格**
 
-        # **其次抓取所有 `円` 之前的數字**
-        price_match = re.findall(r"([\d,]+)円", line)
-        if price_match:
-            all_prices.extend([int(p.replace(",", "")) for p in price_match])
-
-    # **優先使用含稅價格**
-    if tax_included_price:
-        price_jpy = tax_included_price
-    elif all_prices:
-        price_jpy = max(all_prices)  # **選擇最大值作為主要價格**
-
-    # **換算台幣價格**
     if price_jpy != "N/A":
-        price_twd = str(math.ceil(int(price_jpy) * 0.35))
+        price_twd = str(math.ceil(int(price_jpy) * 0.35))  # **台幣換算**
 
     return {
         "status": "done",
@@ -124,6 +112,7 @@ def extract_price_and_name(ocr_text):
         "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
         "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
     }
+
 
 # **啟動 Flask**
 if __name__ == "__main__":
