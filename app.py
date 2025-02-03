@@ -1,4 +1,4 @@
-#GPT說可以抓取我網站價格跟名字
+#GPT說可以抓取我網站價格跟名字 2
 import os
 
 import re
@@ -95,6 +95,7 @@ def extract_price_and_name(ocr_text):
     base_price_match = re.search(r"([\d,]+)\s*円\s*\(税抜\)", ocr_text)  # **未稅價格**
     tmall_price_match = re.search(r"[¥]?\s*([\d,]+)\s*円(?:\s*送料無料)?", ocr_text)  # **天貓格式**
     yahoo_price_match = re.search(r"[¥]?\s*([\d,]+)\s*円(?:\s*\(税\s*\d+\s*円\))?", ocr_text)  # **奇摩格式**
+    uniqlo_price_match = re.search(r"¥\s*([\d,]+)", ocr_text)  # **UNIQLO 價格 (¥1290 這種格式)**
 
     if tax_price_match:
         price_jpy = tax_price_match.group(1).replace(",", "")  # **直接使用含稅價格**
@@ -106,7 +107,8 @@ def extract_price_and_name(ocr_text):
         price_jpy = tmall_price_match.group(1).replace(",", "")  # **天貓格式**
     elif yahoo_price_match:
         price_jpy = yahoo_price_match.group(1).replace(",", "")  # **奇摩格式**
-
+    elif uniqlo_price_match:
+        price_jpy = uniqlo_price_match.group(1).replace(",", "")  # **UNIQLO 格式 (¥1290)**
     if price_jpy != "N/A":
         price_twd = str(math.ceil(int(price_jpy) * 0.35))  # **台幣換算**
 
