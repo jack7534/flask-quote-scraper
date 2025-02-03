@@ -1,4 +1,4 @@
-# 正確抓取 含稅未稅價3
+# 正確抓取 含稅未稅價4
 import os
 import io
 import json
@@ -124,6 +124,7 @@ def extract_price_and_name(ocr_text):
         "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
         "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
     }
+
 
 # **啟動 Flask**
 if __name__ == "__main__":
