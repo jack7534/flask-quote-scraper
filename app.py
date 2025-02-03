@@ -29,7 +29,6 @@ with open(cred_path, "w") as f:
 # **設置 GOOGLE_APPLICATION_CREDENTIALS**
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = cred_path
 
-
 @app.route("/upload", methods=["POST"])
 def upload_file():
     """上傳圖片並進行 OCR 分析"""
@@ -45,7 +44,6 @@ def upload_file():
         return jsonify(result)
     except Exception as e:
         return jsonify({"status": "error", "message": f"伺服器錯誤: {str(e)}"}), 500
-
 
 def process_image(image_file):
     """使用 Google Cloud Vision API 進行 OCR 並提取商品名稱 & 價格"""
@@ -72,11 +70,8 @@ def process_image(image_file):
 
     # **從 OCR 文字中提取商品名稱 & 價格**
     extracted_data = extract_price_and_name(raw_text)
-
-    # **✅ 確保返回完整的數據**
-    extracted_data["ocr_text"] = raw_text
+    extracted_data["ocr_text"] = raw_text  # **✅ 確保返回完整的數據**
     return extracted_data
-
 
 def extract_price_and_name(ocr_text):
     """從 OCR 文字中提取商品名稱 & 價格"""
@@ -85,28 +80,21 @@ def extract_price_and_name(ocr_text):
     price_jpy = "N/A"
     price_twd = "N/A"
 
-    # **🔍 找到價格行的位置**
-    price_index = -1
-    for i, line in enumerate(lines):
-        if re.search(r"[¥]\s*[\d,]+", line):  # 可能的日幣價格格式
-            price_index = i
-            break
-
-    # **🔍 嘗試抓取價格上方的商品名稱**
-    if price_index > 2:  # 確保有足夠的行數可回溯
-        for i in range(price_index - 1, max(price_index - 5, -1), -1):
-            if len(lines[i]) > 5 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント|https?)", lines[i]):
-                product_name = lines[i].strip()
+    # **🔍 嘗試抓取商品名稱 (通常在頂部)**
+    for line in lines:
+        if len(line) > 5 and not re.search(r"(税込|税抜|購入|お気に入り|ポイント|送料無料|セール|カート|条件)", line):
+            if "http" not in line and "colorDisplayCode" not in line:
+                product_name = line.strip()
                 break
 
-    # **🔍 優先抓取含稅價格，或計算含稅價格**
-    tax_price_match = re.search(r"¥\s*([\d,]+)\s*\(税込\)", ocr_text)  # 直接含稅價格
-    tax_rate_match = re.search(r"税率(\d+)%\s*([\d,]+)円", ocr_text)  # 稅率與未稅價格
-    base_price_match = re.search(r"([\d,]+)\s*円\s*\(税抜\)", ocr_text)  # 未稅價格
-    normal_price_match = re.search(r"¥\s*([\d,]+)", ocr_text)  # 其他價格格式
+    # **🔍 嘗試抓取價格**
+    tax_price_match = re.search(r"[¥]\s*([\d,]+)\s*\(税込\)", ocr_text)  # **直接含稅價格**
+    tax_rate_match = re.search(r"税率(\d+)%\s*([\d,]+)円", ocr_text)  # **稅率與未稅價格**
+    base_price_match = re.search(r"([\d,]+)\s*円\s*\(税抜\)", ocr_text)  # **未稅價格**
+    normal_price_match = re.search(r"[¥]\s*([\d,]+)", ocr_text)  # **一般價格格式**
 
     if tax_price_match:
-        price_jpy = tax_price_match.group(1).replace(",", "")  # **含稅價格優先，不再計算**
+        price_jpy = tax_price_match.group(1).replace(",", "")  # **直接使用含稅價格**
     elif base_price_match and tax_rate_match:
         base_price = int(base_price_match.group(1).replace(",", ""))
         tax_rate = int(tax_rate_match.group(1)) / 100
@@ -123,7 +111,6 @@ def extract_price_and_name(ocr_text):
         "商品日幣價格 (含稅)": f"{price_jpy} 円" if price_jpy != "N/A" else "N/A",
         "台幣報價": f"{price_twd} 元" if price_twd != "N/A" else "N/A"
     }
-
 
 # **啟動 Flask**
 if __name__ == "__main__":
